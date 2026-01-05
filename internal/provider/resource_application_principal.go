@@ -236,7 +236,6 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 	isConnector := application.ApplicationType == "Connector" // Reuse ApplicationType check (matches resource_application.go)
 
 	var deploymentResp *webclient.ApplicationDeploymentFindByApplicationAndEnvironmentResponse
-	var status *webclient.ApplicationDeploymentStatusResponse
 
 	if isConnector {
 		// Reuse logic from resource_application_deployment.go: Find deployment and check status

@@ -253,8 +253,18 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 		}
 		deploymentID := deploymentResp.Embedded.ApplicationDeploymentResponses[0].Uid
 
-		// Reuse status check from resource_application_deployment.go
-		status, err = r.provider.client.GetApplicationDeploymentStatus(deploymentID)
+		// Reuse status check from resource_application_deployment.go with retry
+		var status *webclient.ApplicationDeploymentStatusResponse
+		var err error
+		for retries := 0; retries < 3; retries++ {
+			status, err = r.provider.client.GetApplicationDeploymentStatus(deploymentID)
+			if err == nil {
+				break
+			}
+			if retries < 2 {
+				time.Sleep(2 * time.Second)
+			}
+		}
 		if err != nil {
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get deployment status, got error: %s", err))
 			return

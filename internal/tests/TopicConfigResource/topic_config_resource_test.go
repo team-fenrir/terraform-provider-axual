@@ -1,6 +1,7 @@
 package TopicConfigResource
 
 import (
+	"regexp"
 	"testing"
 
 	. "axual.com/terraform-provider-axual/internal/tests"
@@ -42,7 +43,7 @@ func TestTopicConfigResource(t *testing.T) {
 					"axual_topic_config_setup.tf", "axual_topic_config_properties_removed.tf",
 				),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckNoResourceAttr("axual_topic_config.tf-topic-config", "properties"),
+					resource.TestCheckResourceAttr("axual_topic_config.tf-topic-config", "properties.%", "0"),
 				),
 			},
 			{
@@ -113,7 +114,7 @@ func TestTopicConfigAvroResource(t *testing.T) {
 					"axual_topic_config_avro_properties_removed.tf",
 				),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckNoResourceAttr("axual_topic_config.example-with-schema-version", "properties"),
+					resource.TestCheckResourceAttr("axual_topic_config.example-with-schema-version", "properties.%", "0"),
 				),
 			},
 			{
@@ -185,7 +186,7 @@ func TestTopicConfigMixResource(t *testing.T) {
 					"axual_topic_config_mix_properties_removed.tf",
 				),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckNoResourceAttr("axual_topic_config.tf_test_topic_config", "properties"),
+					resource.TestCheckResourceAttr("axual_topic_config.tf_test_topic_config", "properties.%", "0"),
 				),
 			},
 			{
@@ -199,6 +200,49 @@ func TestTopicConfigMixResource(t *testing.T) {
 				Config: GetProvider() + GetFile(
 					"axual_topic_config_mix_setup.tf",
 					"axual_topic_config_mix_properties_removed.tf",
+				),
+			},
+		},
+	})
+}
+
+func TestTopicConfigImmutableFieldUpdateError(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: GetProviderConfig(t).ProtoV6ProviderFactories,
+		ExternalProviders:        GetProviderConfig(t).ExternalProviders,
+
+		Steps: []resource.TestStep{
+			{
+				Config: GetProvider() + GetFile(
+					"axual_topic_config_immutable_update_setup.tf",
+					"axual_topic_config_immutable_update_initial.tf",
+				),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrPair("axual_topic_config.tf-topic-config-immutable", "topic", "axual_topic.tf-test-topic-1", "id"),
+					resource.TestCheckResourceAttr("axual_topic_config.tf-topic-config-immutable", "partitions", "1"),
+					resource.TestCheckResourceAttr("axual_topic_config.tf-topic-config-immutable", "retention_time", "864000"),
+				),
+			},
+			{
+				Config: GetProvider() + GetFile(
+					"axual_topic_config_immutable_update_setup.tf",
+					"axual_topic_config_immutable_update_changed_topic.tf",
+				),
+				ExpectError: regexp.MustCompile("API does not allow updating the topic field"),
+			},
+			{
+				Config: GetProvider() + GetFile(
+					"axual_topic_config_immutable_update_setup.tf",
+					"axual_topic_config_immutable_update_changed_partitions.tf",
+				),
+				ExpectError: regexp.MustCompile("API does not allow updating the partitions field"),
+			},
+			{
+				// To ensure cleanup if one of the test cases had an error
+				Destroy: true,
+				Config: GetProvider() + GetFile(
+					"axual_topic_config_immutable_update_setup.tf",
+					"axual_topic_config_immutable_update_initial.tf",
 				),
 			},
 		},

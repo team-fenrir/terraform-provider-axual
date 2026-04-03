@@ -4,6 +4,7 @@ import (
 	webclient "axual-webclient"
 	"context"
 	"fmt"
+
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -88,33 +89,32 @@ func (d *userDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	}
 
 	// Map the API response to the Terraform data structure.
-	mapUserDataSourceResponseToData(ctx, &data, usersResponse)
+	mapUserDataSourceResponseToData(ctx, &data, usersResponse, 0)
 
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
 }
 
-func mapUserDataSourceResponseToData(ctx context.Context, data *userDataSourceData, usersResponse *webclient.UsersResponse) {
-	// Since the email is unique, we assume there is always exactly one user in the response.
-	user := usersResponse.Embedded.Users[0]
+func mapUserDataSourceResponseToData(ctx context.Context, data *userDataSourceData, usersResponse *webclient.UsersResponse, index int) {
+	user := usersResponse.Embedded.Users[index]
 
 	data.Id = types.StringValue(user.UID)
-	data.Email = types.StringValue(user.Emailaddress.Email)
+	data.Email = types.StringValue(user.EmailAddress.Email)
 	data.FirstName = types.StringValue(user.Firstname)
 	data.LastName = types.StringValue(user.Lastname)
 
 	// Map the middle name, defaulting to an empty string if nil.
 	data.MiddleName = types.StringValue("")
-	if user.Middlename != nil {
-		if middle, ok := user.Middlename.(string); ok {
+	if user.MiddleName != nil {
+		if middle, ok := user.MiddleName.(string); ok {
 			data.MiddleName = types.StringValue(middle)
 		}
 	}
 
 	// Map the phone number, defaulting to an empty string if nil.
 	data.PhoneNumber = types.StringValue("")
-	if user.Phonenumber != nil {
-		if phone, ok := user.Phonenumber.(string); ok {
+	if user.PhoneNumber != nil {
+		if phone, ok := user.PhoneNumber.(string); ok {
 			data.PhoneNumber = types.StringValue(phone)
 		}
 	}

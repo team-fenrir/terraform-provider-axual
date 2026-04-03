@@ -2,6 +2,7 @@ package ApplicationPrincipalResource
 
 import (
 	. "axual.com/terraform-provider-axual/internal/tests"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -24,21 +25,24 @@ func TestApplicationPrincipalOauthbearerResource(t *testing.T) {
 				),
 			},
 			{
+				ResourceName:            "axual_application_principal.tf-test-app-principal",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{},
+			},
+			{
 				Config: GetProvider() + GetFile(
 					"axual_application_principal_setup.tf",
 					"axual_application_principal_oauthbearer_replaced.tf",
 				),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("axual_application_principal.tf-test-app-principal", "principal", "example-oauthbearer-principal-updated"),
-					resource.TestCheckResourceAttr("axual_application_principal.tf-test-app-principal", "custom", "true"),
-				),
+				ExpectError: regexp.MustCompile("API does not allow update of application principal"),
 			},
 			{
 				// To ensure cleanup if one of the test cases had an error
 				Destroy: true,
 				Config: GetProvider() + GetFile(
 					"axual_application_principal_setup.tf",
-					"axual_application_principal_oauthbearer_replaced.tf",
+					"axual_application_principal_oauthbearer_initial.tf",
 				),
 			},
 		},

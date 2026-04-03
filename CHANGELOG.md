@@ -2,7 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
-## [master](https://github.com/Axual/terraform-provider-axual/tree/master) - TBR
+## [3.0.0](https://github.com/Axual/terraform-provider-axual/tree/master) - 2026-03-24
+* Import support for `axual_application_principal`
+* Import support for `axual_application_credential`
+* Import support for `axual_topic_browse_permissions`
+* Fix `axual_environment` import limitation
+* User creation via Terraform is no longer supported.
+* Removed unused API response fields across multiple data structures for improved maintainability
+* Removed `bootstrapServers` field references as the field has been removed from the `/clusters` API endpoints
+* Updated `axual_user` resource documentation to reflect the removal of user creation capability
+
+## [2.9.1](https://github.com/Axual/terraform-provider-axual/releases/tag/v2.9.1) - 2026-01-18
+* Fixed the compatibility matrix
+* Fixed documentation about grants, clarifying that terraform plan does not automatically refresh the state.
+
+## [2.9.0](https://github.com/Axual/terraform-provider-axual/releases/tag/v2.9.0) - 2026-01-18
+### Added
+* Import support for `axual_application_access_grant` resource
+* Import support for `axual_application_access_grant_approval` resource
+* Import support for `axual_application_access_grant_rejection` resource
+* Creating an `axual_application_access_grant_approval` in environment with automatic authorization issuer is not required.
+* Grant Delete now handles terminal states (Revoked, Rejected, Cancelled) gracefully - just removes from state
+
+### Changed
+* Updated "Managing application access to topics" guide with import instructions and auto-revoke documentation
+* Updated resource documentation for all three grant-related resources
+
+### Fixed
+* Grant Delete no longer fails with "Please Revoke first" error - approved grants are auto-revoked
+* Approval and Rejection Read functions now properly handle NotFoundError and status changes
+
+## [2.8.2](https://github.com/Axual/terraform-provider-axual/releases/tag/v2.8.2) - 2026-01-06
+* Fix Application Access Grant failing to update when status is "Approved"
+* Fix Application Deployment state not being saved when START operation times out
+* Add retry logic for deployment START operation to handle transient failures
+* Increase HTTP client timeout from 10s to 30s
+* Rewrite "Managing application access to topics" guide
+
+## [2.8.1](https://github.com/Axual/terraform-provider-axual/releases/tag/v2.8.1) - 2026-01-02
+### Added
+* Fix for issues: https://github.com/Axual/terraform-provider-axual/issues/133
+* New guide for schemas
+* Rewrote the guide for data sources
+* Fix CHANGELOG.md
+* Fix test against PM 12.0.0
+
+## [2.8.0](https://github.com/Axual/terraform-provider-axual/releases/tag/v2.8.0) - 2025-12-23
 ### Added
 * Support for Axual-managed `KSML` Application
 
@@ -24,6 +69,11 @@ All notable changes to this project will be documented in this file.
 * Retrieve an application using `findByName` or `findByShortName` endpoints instead of `findByAttributes`
 * Fixed `axual_topic_config` to allow in-place updates of `key_schema_version` and `value_schema_version` fields instead of forcing resource replacement
 * Added boolean `force` attribute to `axual_topic_config` resource to force updates with incompatible schema version changes
+
+## [2.5.6](https://github.com/Axual/terraform-provider-axual/releases/tag/v2.5.6) - 2025-06-06
+* Add User data source
+* Guide for JSON schema
+* Removed trial guide
 
 ## [2.5.5](https://github.com/Axual/terraform-provider-axual/releases/tag/v2.5.5) - 2025-03-07
 * Removed unused method for `/groups/{uid}/members/{uid}`

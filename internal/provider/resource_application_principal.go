@@ -140,46 +140,6 @@ func (r *applicationPrincipalResource) Create(ctx context.Context, req resource.
 	tflog.Info(ctx, "Saving the resource to state")
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
-
-	// Check if the application is a connector and start the deployment if it exists
-	application, err := r.provider.client.GetApplication(data.Application.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read application, got error: %s", err))
-		return
-	}
-
-	isConnector := application.ApplicationType == "Connector"
-
-	var deploymentResp *webclient.ApplicationDeploymentFindByApplicationAndEnvironmentResponse
-
-    if isConnector {
-        // Find deployment and start it
-        applicationURL := fmt.Sprintf("%s/applications/%v", r.provider.client.ApiURL, data.Application.ValueString())
-        environmentURL := fmt.Sprintf("%s/environments/%v", r.provider.client.ApiURL, data.Environment.ValueString())
-        deploymentResp, err = r.provider.client.FindApplicationDeploymentByApplicationAndEnvironment(applicationURL, environmentURL)
-        if err != nil {
-            resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to find deployment, got error: %s", err))
-            return
-        }
-        if len(deploymentResp.Embedded.ApplicationDeploymentResponses) > 0 {
-            deploymentID := deploymentResp.Embedded.ApplicationDeploymentResponses[0].Uid
-            // Get deployment status
-            status, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
-            if err != nil {
-                resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get deployment status, got error: %s", err))
-                return
-            }
-            deploymentType := "Connector"
-            if utils.ShouldStartDeployment(deploymentType, status) {
-                startRequest := webclient.ApplicationDeploymentOperationRequest{Action: "START"}
-                err = r.provider.client.OperateApplicationDeployment(deploymentID, "START", startRequest)
-                if err != nil {
-                    resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to start connector, got error: %s", err))
-                    return
-                }
-            }
-        }
-    }
 }
 
 func (r *applicationPrincipalResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -225,22 +185,22 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 		return
 	}
 
-	// Check if the application is a connector (reuse GetApplication from resource_application.go pattern)
+	// Check if the application is a connector
 	application, err := r.provider.client.GetApplication(data.Application.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read application, got error: %s", err))
 		return
 	}
 
-	isConnector := application.ApplicationType == "Connector" // Reuse ApplicationType check (matches resource_application.go)
-
-	var deploymentResp *webclient.ApplicationDeploymentFindByApplicationAndEnvironmentResponse
+	isConnector := application.ApplicationType == "Connector"
+	var deploymentID string
+	var shouldRestart bool
 
 	if isConnector {
-		// Reuse logic from resource_application_deployment.go: Find deployment and check status
 		applicationURL := fmt.Sprintf("%s/applications/%v", r.provider.client.ApiURL, data.Application.ValueString())
 		environmentURL := fmt.Sprintf("%s/environments/%v", r.provider.client.ApiURL, data.Environment.ValueString())
-		deploymentResp, err = r.provider.client.FindApplicationDeploymentByApplicationAndEnvironment(applicationURL, environmentURL)
+
+		deploymentResp, err := r.provider.client.FindApplicationDeploymentByApplicationAndEnvironment(applicationURL, environmentURL)
 		if err != nil {
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to find deployment, got error: %s", err))
 			return
@@ -249,11 +209,11 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 			resp.Diagnostics.AddError("Client Error", "No deployment found for connector")
 			return
 		}
-		deploymentID := deploymentResp.Embedded.ApplicationDeploymentResponses[0].Uid
 
-		// Reuse status check from resource_application_deployment.go with retry
+		deploymentID = deploymentResp.Embedded.ApplicationDeploymentResponses[0].Uid
+
+		// Get deployment status with retry
 		var status *webclient.ApplicationDeploymentStatusResponse
-		var err error
 		for retries := 0; retries < 3; retries++ {
 			status, err = r.provider.client.GetApplicationDeploymentStatus(deploymentID)
 			if err == nil {
@@ -268,37 +228,68 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 			return
 		}
 
-		// Reuse ShouldStopDeployment from utils.go (adapted for string type)
-		deploymentType := "Connector" // Assuming connector based on application type
-		if utils.ShouldStopDeployment(deploymentType, status) { // Use capitalized utils.ShouldStopDeployment
+		// Stop the connector if needed
+		if utils.ShouldStopDeployment("Connector", status) {
 			stopRequest := webclient.ApplicationDeploymentOperationRequest{Action: "STOP"}
 			err = r.provider.client.OperateApplicationDeployment(deploymentID, "STOP", stopRequest)
 			if err != nil {
 				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to stop connector, got error: %s", err))
 				return
 			}
-			// Wait for the deployment to be stopped
-			for i := 0; i < 30; i++ { // Wait up to 30 seconds
+
+			// Wait for the connector to fully stop (up to 30 seconds)
+			stopped := false
+			for i := 0; i < 30; i++ {
 				time.Sleep(1 * time.Second)
 				currentStatus, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
 				if err != nil {
 					continue
 				}
-				if !utils.ShouldStopDeployment(deploymentType, currentStatus) {
+				if !utils.ShouldStopDeployment("Connector", currentStatus) {
+					stopped = true
 					break
 				}
-				if i == 29 {
-					resp.Diagnostics.AddError("Client Error", "Connector did not stop within 30 seconds")
-					return
-				}
+			}
+			if !stopped {
+				resp.Diagnostics.AddError("Client Error", "Connector did not stop within 30 seconds")
+				return
 			}
 		}
+
+		principals, err := r.provider.client.FindApplicationPrincipalByApplicationAndEnvironment(
+			fmt.Sprintf("%s/applications/%v", r.provider.client.ApiURL, data.Application.ValueString()),
+			fmt.Sprintf("%s/environments/%v", r.provider.client.ApiURL, data.Environment.ValueString()),
+		)
+		if err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to list application principals, got error: %s", err))
+			return
+		}
+		shouldRestart = len(principals.Embedded.ApplicationPrincipalResponses) > 1
 	}
 
+	// Delete the application principal
 	err = r.provider.client.DeleteApplicationPrincipal(data.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete application principal, got error: %s", err))
 		return
+	}
+
+	// Restart the connector only if at least one principal remains after deletion
+	if isConnector && deploymentID != "" && shouldRestart {
+		status, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
+		if err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get deployment status after principal deletion, got error: %s", err))
+			return
+		}
+
+		if utils.ShouldStartDeployment("Connector", status) {
+			startRequest := webclient.ApplicationDeploymentOperationRequest{Action: "START"}
+			err = r.provider.client.OperateApplicationDeployment(deploymentID, "START", startRequest)
+			if err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to start connector after principal deletion, got error: %s", err))
+				return
+			}
+		}
 	}
 }
 

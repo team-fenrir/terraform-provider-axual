@@ -231,9 +231,11 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 		// Stop the connector if needed
 		if utils.ShouldStopDeployment("Connector", status) {
 			stopRequest := webclient.ApplicationDeploymentOperationRequest{Action: "STOP"}
-			err = r.provider.client.OperateApplicationDeployment(deploymentID, "STOP", stopRequest)
+			err = Retry(3, 10*time.Second, func() error {
+				return r.provider.client.OperateApplicationDeployment(deploymentID, "STOP", stopRequest)
+			})
 			if err != nil {
-				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to stop connector, got error: %s", err))
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to stop connector after retries, got error: %s", err))
 				return
 			}
 
@@ -243,6 +245,7 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 				time.Sleep(1 * time.Second)
 				currentStatus, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
 				if err != nil {
+					tflog.Warn(ctx, fmt.Sprintf("Error polling stop status on attempt %d: %s", i+1, err))
 					continue
 				}
 				if !utils.ShouldStopDeployment("Connector", currentStatus) {
@@ -284,10 +287,16 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 
 		if utils.ShouldStartDeployment("Connector", status) {
 			startRequest := webclient.ApplicationDeploymentOperationRequest{Action: "START"}
-			err = r.provider.client.OperateApplicationDeployment(deploymentID, "START", startRequest)
+			err = Retry(3, 10*time.Second, func() error {
+				return r.provider.client.OperateApplicationDeployment(deploymentID, "START", startRequest)
+			})
 			if err != nil {
-				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to start connector after principal deletion, got error: %s", err))
-				return
+				if strings.Contains(err.Error(), "Invalid action for this state of deployment") {
+					tflog.Info(ctx, "Connector appears to be already running - START not needed")
+				} else {
+					resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to start connector after principal deletion, got error: %s", err))
+					return
+				}
 			}
 		}
 	}

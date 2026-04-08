@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -44,29 +45,6 @@ func (r *applicationPrincipalResource) Metadata(ctx context.Context, req resourc
 	resp.TypeName = req.ProviderTypeName + "_application_principal"
 }
 
-// trimSpaceSemanticallyEqual suppresses diffs caused only by surrounding whitespace.
-// This is needed because the Create function trims whitespace before sending to the API,
-// so the API returns a trimmed value, while the Terraform config (from file()) may include
-// a trailing newline. Without this, every import would show a spurious replacement diff.
-type trimSpaceSemanticallyEqual struct{}
-
-func (m trimSpaceSemanticallyEqual) Description(_ context.Context) string {
-	return "Suppresses diffs caused only by surrounding whitespace differences."
-}
-
-func (m trimSpaceSemanticallyEqual) MarkdownDescription(_ context.Context) string {
-	return "Suppresses diffs caused only by surrounding whitespace differences."
-}
-
-func (m trimSpaceSemanticallyEqual) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-	if req.StateValue.IsNull() || req.StateValue.IsUnknown() || req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
-		return
-	}
-	if strings.TrimSpace(req.StateValue.ValueString()) == strings.TrimSpace(req.ConfigValue.ValueString()) {
-		resp.PlanValue = req.StateValue
-	}
-}
-
 func (r *applicationPrincipalResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		// This description is used by the documentation generator and the language server.
@@ -78,21 +56,30 @@ func (r *applicationPrincipalResource) Schema(ctx context.Context, req resource.
 				Required:            true,
 				Sensitive:           true,
 				PlanModifiers: []planmodifier.String{
-					trimSpaceSemanticallyEqual{},
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"private_key": schema.StringAttribute{
 				MarkdownDescription: "The private key of a Connector Application for an Environment. Must be PEM-format. If committing terraform configuration(.tf) file in version control repository, please make sure there is a secure way of providing private key for a Connector application's Application Principal. Here are best practices for handling secrets in Terraform: https://blog.gitguardian.com/how-to-handle-secrets-in-terraform/.",
 				Optional:            true,
 				Sensitive:           true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"application": schema.StringAttribute{
 				MarkdownDescription: "A valid UID of an existing application",
 				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"environment": schema.StringAttribute{
 				MarkdownDescription: "A valid Uid of an existing environment",
 				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -104,6 +91,9 @@ func (r *applicationPrincipalResource) Schema(ctx context.Context, req resource.
 			"custom": schema.BoolAttribute{
 				Optional:            true,
 				MarkdownDescription: "A boolean identifying whether we are creating a custom principal. If true, the custom principal will be stored in `principal` property. Custom principal allows an application with SASL+OAUTHBEARER to produce/consume a topic. Custom Application Principal certificate is used to authenticate your application with an IAM provider using the custom ApplicationPrincipal as Client ID",
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.RequiresReplace(),
+				},
 			},
 		},
 	}

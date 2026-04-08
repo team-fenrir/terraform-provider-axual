@@ -271,7 +271,7 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 	if isConnector && deploymentID != "" && shouldRestart {
 		status, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
 		if err != nil {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get deployment status after principal deletion, got error: %s", err))
+			resp.Diagnostics.AddWarning("Connector Restart", fmt.Sprintf("Unable to get deployment status after principal deletion, got error: %s", err))
 			return
 		}
 
@@ -284,8 +284,7 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 				if strings.Contains(err.Error(), "Invalid action for this state of deployment") {
 					tflog.Info(ctx, "Connector appears to be already running - START not needed")
 				} else {
-					resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to start connector after principal deletion, got error: %s", err))
-					return
+					resp.Diagnostics.AddWarning("Connector Restart", fmt.Sprintf("Unable to start connector after principal deletion, got error: %s", err))
 				}
 			}
 		}

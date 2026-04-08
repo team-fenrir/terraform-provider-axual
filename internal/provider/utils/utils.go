@@ -50,7 +50,7 @@ func ShouldStopDeployment(deploymentType string, status *webclient.ApplicationDe
 }
 
 func ShouldStartDeployment(deploymentType string, status *webclient.ApplicationDeploymentStatusResponse) bool {
-    if (IsKSML(deploymentType) && status.KsmlStatus.Status == "Undeployed") || (!IsKSML(deploymentType) && (status.ConnectorState.State == "Stopped" || status.ConnectorState.State == "Paused")) {
+    if (IsKSML(deploymentType) && status.KsmlStatus.Status == "Undeployed") || (!IsKSML(deploymentType) && (status.ConnectorState.State != "Running" || status.ConnectorState.State != "Failed")) {
         return true
     }
     return false

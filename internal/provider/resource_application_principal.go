@@ -175,20 +175,6 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 		return
 	}
 
-	// Guard: ensure at least one principal will remain after deletion
-	principals, err := r.provider.client.FindApplicationPrincipalByApplicationAndEnvironment(
-		fmt.Sprintf("%s/applications/%v", r.provider.client.ApiURL, data.Application.ValueString()),
-		fmt.Sprintf("%s/environments/%v", r.provider.client.ApiURL, data.Environment.ValueString()),
-	)
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to list application principals, got error: %s", err))
-		return
-	}
-	if len(principals.Embedded.ApplicationPrincipalResponses) <= 1 {
-		resp.Diagnostics.AddError("Client Error", "Cannot delete the last application principal")
-		return
-	}
-
 	// Check if the application is a connector
 	application, err := r.provider.client.GetApplication(data.Application.ValueString())
 	if err != nil {
@@ -270,7 +256,7 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 		return
 	}
 
-	// Restart the connector only if at least one principal remains after deletion
+	// Restart the connector
 	if isConnector && deploymentID != "" {
 		status, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
 		if err != nil {

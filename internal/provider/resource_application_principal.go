@@ -191,60 +191,66 @@ func (r *applicationPrincipalResource) Delete(ctx context.Context, req resource.
 
 		deploymentResp, err := r.provider.client.FindApplicationDeploymentByApplicationAndEnvironment(applicationURL, environmentURL)
 		if err != nil {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to find deployment, got error: %s", err))
-			return
-		}
-		if len(deploymentResp.Embedded.ApplicationDeploymentResponses) == 0 {
-			resp.Diagnostics.AddError("Client Error", "No deployment found for connector")
-			return
-		}
-
-		deploymentID = deploymentResp.Embedded.ApplicationDeploymentResponses[0].Uid
-
-		// Get deployment status with retry
-		var status *webclient.ApplicationDeploymentStatusResponse
-		for retries := 0; retries < 3; retries++ {
-			status, err = r.provider.client.GetApplicationDeploymentStatus(deploymentID)
-			if err == nil {
-				break
-			}
-			if retries < 2 {
-				time.Sleep(2 * time.Second)
-			}
-		}
-		if err != nil {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get deployment status, got error: %s", err))
-			return
-		}
-
-		// Stop the connector if needed
-		if utils.ShouldStopDeployment("Connector", status) {
-			stopRequest := webclient.ApplicationDeploymentOperationRequest{Action: "STOP"}
-			err = Retry(3, 10*time.Second, func() error {
-				return r.provider.client.OperateApplicationDeployment(deploymentID, "STOP", stopRequest)
-			})
-			if err != nil {
-				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to stop connector after retries, got error: %s", err))
+			if errors.Is(err, webclient.NotFoundError) {
+				tflog.Info(ctx, "No deployment found for connector during principal deletion, proceeding without stop/start")
+				isConnector = false
+			} else {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to find deployment, got error: %s", err))
 				return
 			}
+		} else if len(deploymentResp.Embedded.ApplicationDeploymentResponses) == 0 {
+			tflog.Info(ctx, "No deployment found for connector during principal deletion, proceeding without stop/start")
+			isConnector = false
+		} else {
+			deploymentID = deploymentResp.Embedded.ApplicationDeploymentResponses[0].Uid
+		}
 
-			// Wait for the connector to fully stop (up to 30 seconds)
-			stopped := false
-			for i := 0; i < 30; i++ {
-				time.Sleep(1 * time.Second)
-				currentStatus, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
-				if err != nil {
-					tflog.Warn(ctx, fmt.Sprintf("Error polling stop status on attempt %d: %s", i+1, err))
-					continue
-				}
-				if !utils.ShouldStopDeployment("Connector", currentStatus) {
-					stopped = true
+		if isConnector {
+			// Get deployment status with retry
+			var status *webclient.ApplicationDeploymentStatusResponse
+			for retries := 0; retries < 3; retries++ {
+				status, err = r.provider.client.GetApplicationDeploymentStatus(deploymentID)
+				if err == nil {
 					break
 				}
+				if retries < 2 {
+					time.Sleep(2 * time.Second)
+				}
 			}
-			if !stopped {
-				resp.Diagnostics.AddError("Client Error", "Connector did not stop within 30 seconds")
+			if err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get deployment status, got error: %s", err))
 				return
+			}
+
+			// Stop the connector if needed
+			if utils.ShouldStopDeployment("Connector", status) {
+				stopRequest := webclient.ApplicationDeploymentOperationRequest{Action: "STOP"}
+				err = Retry(3, 10*time.Second, func() error {
+					return r.provider.client.OperateApplicationDeployment(deploymentID, "STOP", stopRequest)
+				})
+				if err != nil {
+					resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to stop connector after retries, got error: %s", err))
+					return
+				}
+
+				// Wait for the connector to fully stop (up to 30 seconds)
+				stopped := false
+				for i := 0; i < 30; i++ {
+					time.Sleep(1 * time.Second)
+					currentStatus, err := r.provider.client.GetApplicationDeploymentStatus(deploymentID)
+					if err != nil {
+						tflog.Warn(ctx, fmt.Sprintf("Error polling stop status on attempt %d: %s", i+1, err))
+						continue
+					}
+					if !utils.ShouldStopDeployment("Connector", currentStatus) {
+						stopped = true
+						break
+					}
+				}
+				if !stopped {
+					resp.Diagnostics.AddError("Client Error", "Connector did not stop within 30 seconds")
+					return
+				}
 			}
 		}
 	}
